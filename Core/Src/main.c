@@ -80,8 +80,8 @@ uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
 
 #define PWM_MAX 7500
-#define MIN_PWM 2000
-
+#define MIN_PWM 2300
+#define TOLERANCE_CM 2.0f
 typedef struct {
 	float Kp;
 	float Kd;
@@ -145,6 +145,13 @@ float Calculate_PD(PD_Controller *pd, uint32_t *current_distance)
     // Błąd = aktualna odległość - pożądana odległość
     float current_distance_f = *current_distance;
     float error = current_distance_f  - pd->target_distance;
+
+    if (error > -TOLERANCE_CM && error < TOLERANCE_CM){
+    	pd->prev_error = error;
+		pd->last_time = now;
+
+		return 0.0f;
+    }
 
     // Pochodna = jak szybko zmienia się błąd
     float derivative = (error - pd->prev_error) / dt;

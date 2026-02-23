@@ -24,6 +24,8 @@
 #include "usart.h"
 #include "usb_otg.h"
 #include "gpio.h"
+#include <stdio.h>
+#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -39,7 +41,7 @@ struct us_sensor_str distance_sensor;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-void distance_display(uint8_t *giv_dist, uint32_t *acc_dist){
+void distance_display(uint32_t *giv_dist, uint32_t *acc_dist){
 	lcd_clear();
 	lcd_put_cursor(0,0);
 	lcd_send_string("G.D.:");
@@ -75,13 +77,15 @@ void distance_display(uint8_t *giv_dist, uint32_t *acc_dist){
 /* USER CODE BEGIN PV */
 
 uint8_t rx_indx;
-uint8_t rx_data[8];
+uint8_t rx_data[3];
+float giv_dist;
 uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
+float distances;
 
 #define PWM_MAX 7500
-#define MIN_PWM 2300
-#define TOLERANCE_CM 2.0f
+#define MIN_PWM 2400
+#define TOLERANCE_CM 3.0f
 typedef struct {
 	float Kp;
 	float Kd;
@@ -103,6 +107,24 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+float uint8_to_float_ascii(uint8_t bytes[3]) {
+    // Assuming bytes contain ASCII digits: '3', '0', '0'
+	if(bytes[0] != '.' && bytes[1] != '.' && bytes[2] != '.'){
+		int value = (bytes[0] - '0') * 100 +
+                	(bytes[1] - '0') * 10 +
+					(bytes[2] - '0');
+		return (float)value;
+	}
+	else if(bytes[2] == '.'){
+		int value = (bytes[0] - '0') * 10 + (bytes[1] - '0') ;
+		return (float)value;
+	}
+	else if(bytes[1] == '.'){
+		int value = (bytes[0] - '0');
+		return (float)value;
+	}
+}
 
 void SetRobotSpeed(int32_t speed)
 {
@@ -203,10 +225,10 @@ int main(void)
   MX_TIM2_Init();
   MX_I2C1_Init();
   MX_TIM4_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   hc_sr04_init(&distance_sensor, &htim1, &htim2, TIM_CHANNEL_3);
 
-  HAL_UART_Receive_IT(&huart3, rx_data, 8);
   lcd_init();
 
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
@@ -214,7 +236,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 
-  robotPD.Kp = 150.0f;             // Modyfikuj w Live Expressions!
+  robotPD.Kp = 170.0f;             // Modyfikuj w Live Expressions!
   robotPD.Kd = 20.0f;              // Modyfikuj w Live Expressions!
   robotPD.target_distance = 20.0f;   // TU WKLEIĆ TARGET OD OSKARA CHYBA
   robotPD.last_time = HAL_GetTick();
@@ -226,6 +248,12 @@ int main(void)
   while (1)
   {
 	  static uint32_t last_pd_calc_time = 0;
+
+	  HAL_UART_Receive_IT(&huart2, rx_data, 3);
+	  giv_dist = uint8_to_float_ascii(rx_data);
+
+	  robotPD.target_distance = giv_dist;
+
 
 	  if (HAL_GetTick() - last_pd_calc_time > 50)
 	       {
@@ -240,6 +268,12 @@ int main(void)
 	       }
 
 	  distance_display(rx_data, &distance_sensor.distance_cm);
+
+	  distances = (float)distance_sensor.distance_cm;
+
+	  char wifi_buffer[50];
+	  sprintf(wifi_buffer, "%.1f\n", distances);
+	  HAL_UART_Transmit(&huart2, (uint8_t*)wifi_buffer, strlen(wifi_buffer), 1000);
 
 
     /* USER CODE END WHILE */
@@ -319,7 +353,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   /* NOTE : This function should not be modified, when the callback is needed,
             the HAL_UART_RxCpltCallback can be implemented in the user file.
    */
-  	  HAL_UART_Transmit(&huart3, rx_data, 8, 10);}
+  	  HAL_UART_Transmit(&huart3, rx_data, 8, 10);
+}
 
 /* USER CODE END 4 */
 
